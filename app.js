@@ -128,7 +128,10 @@ async function fetchSheetCSV(url){
 
   const parsed = parseCSV(text);
   console.log('[TEREX Debug] Parsed rows:', parsed.length);
-  if(parsed.length > 0) console.log('[TEREX Debug] First row keys:', Object.keys(parsed[0]));
+  if(parsed.length > 0){
+    console.log('[TEREX Debug] ALL column keys:', JSON.stringify(Object.keys(parsed[0])));
+    console.log('[TEREX Debug] First row values:', JSON.stringify(parsed[0]));
+  }
   return parsed;
 }
 
