@@ -78,9 +78,10 @@ function resetCustomerData(id){
 /* ===================== GOOGLE SHEETS INTEGRATION ===================== */
 
 /* Parse CSV text dari Google Sheets publish URL.
-   Returns array of objects dengan lowercase keys (konsisten dengan sheetToObjects). */
+   Returns array of objects dengan lowercase keys (konsisten dengan sheetToObjects).
+   Auto-detects header row: skip title rows and empty rows. */
 function parseCSV(csvText){
-  const lines = csvText.split('\n').map(l => l.replace(/\r$/, '')).filter(l => l.trim());
+  const lines = csvText.split('\n').map(l => l.replace(/\r$/, ''));
   if(lines.length < 2) return [];
 
   function splitCSVLine(line){
@@ -98,9 +99,39 @@ function parseCSV(csvText){
     return result;
   }
 
-  const headers = splitCSVLine(lines[0]).map(h => h.trim().toLowerCase());
+  /* Auto-detect header row:
+     - Skip baris yang semua selnya kosong
+     - Skip baris judul (hanya 1 sel terisi dari banyak kolom)
+     - Skip baris TOTAL
+     - Ambil baris pertama yang punya >= 3 sel terisi sebagai header */
+  let headerIdx = -1;
+  let maxCols = 0;
+
+  /* First pass: find max columns to determine "real" rows vs title rows */
+  for(let i = 0; i < Math.min(lines.length, 20); i++){
+    const cells = splitCSVLine(lines[i]);
+    if(cells.length > maxCols) maxCols = cells.length;
+  }
+
+  for(let i = 0; i < Math.min(lines.length, 20); i++){
+    const cells = splitCSVLine(lines[i]);
+    const filled = cells.filter(c => c.trim());
+    if(filled.length === 0) continue;                          // baris kosong
+    const first = filled[0].trim().toUpperCase();
+    if(first === 'TOTAL') continue;                            // baris total
+    /* Baris judul: hanya 1-2 sel terisi padahal ada banyak kolom */
+    if(filled.length <= 2 && maxCols > 5) continue;
+    /* Ini header row */
+    headerIdx = i;
+    break;
+  }
+
+  if(headerIdx === -1) return [];
+
+  const headers = splitCSVLine(lines[headerIdx]).map(h => h.trim().toLowerCase());
   const out = [];
-  for(let i = 1; i < lines.length; i++){
+  for(let i = headerIdx + 1; i < lines.length; i++){
+    if(!lines[i].trim()) continue;
     const vals = splitCSVLine(lines[i]);
     if(vals.every(v => !v.trim())) continue;
     const obj = {};
