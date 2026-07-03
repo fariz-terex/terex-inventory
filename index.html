@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TEREX | Inventory System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<button id="sidebarToggle" class="sidebar-toggle" aria-label="Toggle menu">
+  <span></span><span></span><span></span>
+</button>
+<div id="sidebarOverlay" class="sidebar-overlay"></div>
+
+<div class="app-shell">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <label class="logo-slot" id="logoSlot" title="Klik untuk upload logo">
+        <img id="logoImg" src="" alt="TEREX Logo" style="display:none;">
+        <span id="logoFallback" class="logo-fallback">TX</span>
+        <input type="file" id="logoFile" accept="image/*" hidden>
+      </label>
+      <div class="brand-text">
+        <span class="brand-title">TEREX</span>
+        <span class="brand-sub">Inventory System</span>
+      </div>
+    </div>
+
+    <!-- Customer Switcher -->
+    <div class="customer-switcher" id="customerDropdown">
+      <button class="customer-toggle" id="customerDropdownToggle">
+        <span class="ct-label">Customer</span>
+        <span class="customer-badge" id="customerBadge">IPT</span>
+        <svg class="ct-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="customer-dropdown-menu" id="customerDropdownMenu"></div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-page="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>
+        <span>Dashboard</span>
+      </button>
+      <button class="nav-item" data-page="inbound">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v11" stroke-linecap="round"/><path d="M7.5 10.5L12 15l4.5-4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Data Inbound</span>
+      </button>
+      <button class="nav-item" data-page="outbound">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 18V7" stroke-linecap="round"/><path d="M7.5 11.5L12 7l4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Data Outbound</span>
+      </button>
+      <button class="nav-item" data-page="stock">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="7.5" r="3.2"/><path d="M4.5 20c0-3.6 3.36-6.2 7.5-6.2s7.5 2.6 7.5 6.2" stroke-linecap="round"/></svg>
+        <span>Stock Teknisi</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-source">
+      <div class="source-label-row">
+        <span class="source-label">Sumber Data</span>
+        <span class="source-badge pending" id="sourceBadge">○ Belum fetch</span>
+      </div>
+
+      <!-- Google Sheets live indicator -->
+      <div class="sheets-status-row">
+        <span class="sheets-dot pending" id="sheetsDot" title="Status Google Sheets"></span>
+        <span class="sheets-status-text">
+          <span id="lastRefreshLabel">Terakhir update:</span>
+          <span id="lastRefreshTime">—</span>
+        </span>
+      </div>
+
+      <!-- Manual refresh + countdown -->
+      <button class="refresh-btn" id="manualRefreshBtn" title="Refresh data dari Google Sheets">
+        <svg id="refreshIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Refresh Sekarang</span>
+        <span class="refresh-countdown" id="refreshCountdown">5:00</span>
+      </button>
+
+      <div class="source-status" id="sourceStatus">
+        <span class="status-dot off"></span>
+        <span id="sourceStatusText">Belum ada data</span>
+      </div>
+      <div class="source-meta" id="sourceMeta"></div>
+
+      <!-- Upload Excel (backup) -->
+      <label class="upload-btn" id="excelUploadBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v10m0 0l-3.5-3.5M12 14l3.5-3.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 16.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1.5" stroke-linecap="round"/></svg>
+        <span>Upload Excel</span>
+        <input type="file" id="excelFile" accept=".xlsx,.xls" hidden>
+      </label>
+
+      <button class="reset-btn" id="resetDataBtn">Reset Data</button>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+    <header class="topbar">
+      <h1 id="pageTitle">Dashboard</h1>
+      <p id="pageSubtitle" class="page-subtitle">Ringkasan inventory material — TEREX</p>
+    </header>
+
+    <!-- ===== DASHBOARD ===== -->
+    <section class="page active" id="page-dashboard">
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-icon icon-neutral"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg></div>
+          <div class="kpi-value" id="kpiTotalMaterial">0</div>
+          <div class="kpi-label">Total Material</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon icon-in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v11M7.5 10.5L12 15l4.5-4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke-linecap="round"/></svg></div>
+          <div class="kpi-value" id="kpiQtyInbound">0</div>
+          <div class="kpi-label">Total Qty Inbound</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon icon-out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 18V7M7.5 11.5L12 7l4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke-linecap="round"/></svg></div>
+          <div class="kpi-value" id="kpiQtyOutbound">0</div>
+          <div class="kpi-label">Total Qty Outbound</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon icon-ready"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="kpi-value" id="kpiStockReady">0</div>
+          <div class="kpi-label">Stock Ready (WH)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon icon-faulty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 9v4M12 17h.01" stroke-linecap="round"/><circle cx="12" cy="12" r="9"/></svg></div>
+          <div class="kpi-value" id="kpiStockFaulty">0</div>
+          <div class="kpi-label" id="kpiFaultyLabel">Belum Return ke WH</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon icon-neutral"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="7.5" r="3.2"/><path d="M4.5 20c0-3.6 3.36-6.2 7.5-6.2s7.5 2.6 7.5 6.2" stroke-linecap="round"/></svg></div>
+          <div class="kpi-value" id="kpiTeknisi">0</div>
+          <div class="kpi-label">Total Teknisi</div>
+        </div>
+      </div>
+
+      <div class="charts-grid">
+        <div class="chart-card chart-small">
+          <h3>Ready vs Belum Return</h3>
+          <div class="chart-wrap"><canvas id="chartReadyFaulty"></canvas></div>
+        </div>
+        <div class="chart-card chart-wide">
+          <h3>Material Paling Sering Digunakan di Site</h3>
+          <p class="chart-hint">Berdasarkan total Qty Outbound</p>
+          <div class="chart-wrap"><canvas id="chartTopUsed"></canvas></div>
+        </div>
+        <div class="chart-card chart-full mat-card">
+          <div class="mat-section-head">
+            <div>
+              <h3>Material Ready di Warehouse</h3>
+              <p class="chart-hint">Berdasarkan Status Ready/Baik di sheet Inbound</p>
+            </div>
+            <span class="mat-total-badge badge-ready-pill" id="readyTotalBadge">0 unit</span>
+          </div>
+          <div class="mat-split">
+            <div class="mat-chart-wrap"><canvas id="chartReadyMat"></canvas></div>
+            <div class="mat-table-wrap">
+              <table class="mat-table">
+                <thead><tr><th>Material</th><th class="num">Qty</th></tr></thead>
+                <tbody id="readyMatBody"><tr><td colspan="2" class="empty-row">Belum ada data.</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-card chart-full mat-card">
+          <div class="mat-section-head">
+            <div>
+              <h3>Material Faulty / Perlu Return ke Warehouse</h3>
+              <p class="chart-hint">Baris Outbound yang belum ada BA Return / Tanggal Return</p>
+            </div>
+            <span class="mat-total-badge badge-faulty-pill" id="faultyTotalBadge">0 unit</span>
+          </div>
+          <div class="mat-split">
+            <div class="mat-chart-wrap"><canvas id="chartFaultyMat"></canvas></div>
+            <div class="mat-table-wrap">
+              <table class="mat-table">
+                <thead><tr><th>Material</th><th class="num">Qty</th><th>PIC</th></tr></thead>
+                <tbody id="faultyMatBody"><tr><td colspan="3" class="empty-row">Belum ada data.</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== INBOUND ===== -->
+    <section class="page" id="page-inbound">
+      <div class="toolbar">
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg>
+          <input type="text" id="inboundSearch" placeholder="Cari material, kode, serial number...">
+        </div>
+        <select id="inboundFilterRegion"><option value="">Semua Region</option></select>
+        <select id="inboundFilterStatus"><option value="">Semua Status</option></select>
+        <button class="export-btn" id="inboundExportBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v10m0 0l-3.5-3.5M12 14l3.5-3.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 16.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1.5" stroke-linecap="round"/></svg>
+          Export Excel
+        </button>
+      </div>
+      <div class="table-card">
+        <div class="table-scroll">
+          <table id="inboundTable"><thead><tr></tr></thead><tbody id="inboundBody">
+            <tr><td colspan="10" class="empty-row">Belum ada data. Silakan upload file Excel.</td></tr>
+          </tbody></table>
+        </div>
+        <div class="table-footer">
+          <div class="page-size">Tampilkan <select id="inboundPageSize"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option><option value="100">100</option></select> baris</div>
+          <div id="inboundTableInfo" class="table-info"></div>
+          <div class="pagination" id="inboundPagination"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== OUTBOUND ===== -->
+    <section class="page" id="page-outbound">
+      <div class="toolbar">
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg>
+          <input type="text" id="outboundSearch" placeholder="Cari material, kode, serial number...">
+        </div>
+        <select id="outboundFilterReturn">
+          <option value="">Semua</option>
+          <option value="belum">Belum Return</option>
+          <option value="sudah">Sudah Return</option>
+        </select>
+        <button class="export-btn" id="outboundExportBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v10m0 0l-3.5-3.5M12 14l3.5-3.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 16.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1.5" stroke-linecap="round"/></svg>
+          Export Excel
+        </button>
+      </div>
+      <div class="table-card">
+        <div class="table-scroll">
+          <table id="outboundTable"><thead><tr></tr></thead><tbody id="outboundBody">
+            <tr><td colspan="10" class="empty-row">Belum ada data. Silakan upload file Excel.</td></tr>
+          </tbody></table>
+        </div>
+        <div class="table-footer">
+          <div class="page-size">Tampilkan <select id="outboundPageSize"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option><option value="100">100</option></select> baris</div>
+          <div id="outboundTableInfo" class="table-info"></div>
+          <div class="pagination" id="outboundPagination"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== STOCK TEKNISI ===== -->
+    <section class="page" id="page-stock">
+      <div class="toolbar">
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg>
+          <input type="text" id="stockSearch" placeholder="Cari nama PIC / teknisi...">
+        </div>
+      </div>
+      <div class="table-card">
+        <div class="table-scroll">
+          <table id="stockSummaryTable">
+            <thead><tr>
+              <th>PIC</th>
+              <th class="num">Ready</th>
+              <th class="num">Faulty</th>
+              <th class="num">Pending</th>
+              <th class="num">Total</th>
+            </tr></thead>
+            <tbody id="stockSummaryBody">
+              <tr><td colspan="5" class="empty-row">Belum ada data.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="detail-panel" id="stockDetailPanel" style="display:none;">
+        <div class="detail-header">
+          <h3>Detail Material &mdash; <span id="stockDetailName"></span></h3>
+          <button class="close-btn" id="stockDetailClose">&times;</button>
+        </div>
+        <div class="table-card material-breakdown-card">
+          <div class="breakdown-head">Qty per Jenis Material</div>
+          <div class="table-scroll">
+            <table id="stockMaterialBreakdownTable">
+              <thead><tr><th>Material Name</th><th class="num">Qty</th></tr></thead>
+              <tbody id="stockMaterialBreakdownBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="table-card">
+          <div class="table-scroll">
+            <table id="stockDetailTable">
+              <thead><tr>
+                <th>Material Name</th><th>Item Code</th><th>Serial Number</th><th class="num">Qty</th><th>Status</th>
+              </tr></thead>
+              <tbody id="stockDetailBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="customers.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
