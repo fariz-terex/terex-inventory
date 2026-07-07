@@ -204,8 +204,8 @@ const CUSTOMERS = {
     name: 'RGR',
     color: '#1E8E5A',
     sheets: {
-      inbound:  '',   // TODO: paste URL sheet Inbound RGR
-      outbound: '',   // TODO: paste URL sheet Outbound RGR
+      inbound:  'https://docs.google.com/spreadsheets/d/e/2PACX-1vSBJjcfM6sfOpuIxvPo-txCoyxGlZV410Hd1XkiNjm0ccFVmv0bcSD1-7YBvs-ZWA/pub?gid=269731844&single=true&output=csv',
+      outbound: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSBJjcfM6sfOpuIxvPo-txCoyxGlZV410Hd1XkiNjm0ccFVmv0bcSD1-7YBvs-ZWA/pub?gid=615071854&single=true&output=csv',
     },
     sheetInbound:  '02.data barang masuk',
     sheetOutbound: '03. data barang keluar',
