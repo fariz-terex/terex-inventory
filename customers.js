@@ -22,8 +22,8 @@ const CUSTOMERS = {
        Format: https://docs.google.com/spreadsheets/d/[ID]/gviz/tq?tqx=out:csv&sheet=[NAMA_SHEET]
        Kosongkan string ('') jika belum dikonfigurasi. */
     sheets: {
-      inbound:  '',   // TODO: paste URL sheet Inbound IPT
-      outbound: '',   // TODO: paste URL sheet Outbound IPT
+      inbound:  'https://docs.google.com/spreadsheets/d/e/2PACX-1vRKpjd1obTGuY2dqhOFUXtrfh7ACVntlvSjz1firGklXv0KLqMHx13aUuaAvlU02Jhpx2_M3DYmycFC/pub?gid=774737978&single=true&output=csv',
+      outbound: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRKpjd1obTGuY2dqhOFUXtrfh7ACVntlvSjz1firGklXv0KLqMHx13aUuaAvlU02Jhpx2_M3DYmycFC/pub?gid=1044779915&single=true&output=csv',
     },
     sheetInbound:  'inbound',
     sheetOutbound: 'outbound',
