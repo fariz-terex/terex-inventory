@@ -77,6 +77,18 @@ function resetCustomerData(id){
 
 /* ===================== GOOGLE SHEETS INTEGRATION ===================== */
 
+/* Jika ada nama kolom yang duplikat (mis. 2x "SOH"), beri suffix _2, _3, dst
+   supaya tidak saling menimpa saat dibentuk jadi object. */
+function dedupeHeaders(headers){
+  const seen = {};
+  return headers.map(h => {
+    if(!h) return h;
+    if(!(h in seen)){ seen[h] = 1; return h; }
+    seen[h]++;
+    return `${h}_${seen[h]}`;
+  });
+}
+
 /* Parse CSV text dari Google Sheets publish URL.
    Returns array of objects dengan lowercase keys (konsisten dengan sheetToObjects).
    Auto-detects header row: skip title rows and empty rows. */
@@ -121,6 +133,10 @@ function parseCSV(csvText){
     if(first === 'TOTAL') continue;                            // baris total
     /* Baris judul: hanya 1-2 sel terisi padahal ada banyak kolom */
     if(filled.length <= 2 && maxCols > 5) continue;
+    /* Baris marker (mis. "WAJIB DIISI" diulang di beberapa sel): semua sel
+       terisi punya nilai yang sama persis -> bukan header sungguhan */
+    const uniqueFilled = new Set(filled.map(c => c.trim().toUpperCase()));
+    if(uniqueFilled.size === 1 && filled.length > 1) continue;
     /* Ini header row */
     headerIdx = i;
     break;
@@ -128,7 +144,7 @@ function parseCSV(csvText){
 
   if(headerIdx === -1) return [];
 
-  const headers = splitCSVLine(lines[headerIdx]).map(h => h.trim().toLowerCase());
+  const headers = dedupeHeaders(splitCSVLine(lines[headerIdx]).map(h => h.trim().toLowerCase()));
   const out = [];
   for(let i = headerIdx + 1; i < lines.length; i++){
     if(!lines[i].trim()) continue;
@@ -212,8 +228,8 @@ async function refreshCustomer(id, silent = false){
   }
 
   let changed = false;
-  if(result.inbound  !== null){ d.inboundRaw  = result.inbound;  changed = true; }
-  if(result.outbound !== null){ d.outboundRaw = result.outbound; changed = true; }
+  if(result.inbound  !== null){ d.inboundRaw  = sc.filterInboundRows  ? sc.filterInboundRows(result.inbound)   : result.inbound;  changed = true; }
+  if(result.outbound !== null){ d.outboundRaw = sc.filterOutboundRows ? sc.filterOutboundRows(result.outbound) : result.outbound; changed = true; }
 
   if(changed){
     d.updatedAt = new Date();
@@ -372,12 +388,15 @@ function sheetToObjects(ws){
     if(first.toUpperCase() === 'TOTAL') continue;
     /* Skip rows that look like title/info rows (only 1-2 filled cells out of many cols) */
     if(cells.length <= 2 && rows[i].length > 5) continue;
+    /* Skip marker rows where every filled cell repeats the same value (e.g. "WAJIB DIISI") */
+    const uniqueCells = new Set(cells.map(c => String(c).trim().toUpperCase()));
+    if(uniqueCells.size === 1 && cells.length > 1) continue;
     headerIdx = i;
     break;
   }
 
   const rawHeaders = rows[headerIdx];
-  const headers = normalizeHeaders(rawHeaders);
+  const headers = dedupeHeaders(normalizeHeaders(rawHeaders));
   const out = [];
   for(let i = headerIdx + 1; i < rows.length; i++){
     const r = rows[i];
@@ -412,8 +431,16 @@ function handleExcelFile(file){
 
       const d = cdata();
       const imported = [];
-      if(inboundSheet){  d.inboundRaw  = sheetToObjects(inboundSheet);  imported.push('Inbound'); }
-      if(outboundSheet){ d.outboundRaw = sheetToObjects(outboundSheet); imported.push('Outbound'); }
+      if(inboundSheet){
+        let rows = sheetToObjects(inboundSheet);
+        if(sc.filterInboundRows) rows = sc.filterInboundRows(rows);
+        d.inboundRaw = rows; imported.push('Inbound');
+      }
+      if(outboundSheet){
+        let rows = sheetToObjects(outboundSheet);
+        if(sc.filterOutboundRows) rows = sc.filterOutboundRows(rows);
+        d.outboundRaw = rows; imported.push('Outbound');
+      }
       d.fileName  = file.name;
       d.updatedAt = new Date();
 
@@ -615,8 +642,14 @@ function renderOutboundTable(){
   updateTableInfo('outboundTableInfo', filtered.length, d.outboundRaw.length);
 }
 
-/* ===================== STOCK TEKNISI ===================== */
+/* ===================== STOCK TEKNISI / STOCK PER SITE ===================== */
 function getStockSummary(){
+  const sc = schema();
+  if(sc.stockMode === 'site') return getStockSummarySite();
+  return getStockSummaryTechnician();
+}
+
+function getStockSummaryTechnician(){
   const sc = schema();
   const d  = cdata();
   const map = new Map();
@@ -679,6 +712,37 @@ function getStockSummary(){
     }));
 }
 
+/* Stock per Site/Cluster (mis. PIM) — tidak ada konsep PIC/teknisi.
+   Dikelompokkan berdasarkan sc.stockGroupField, dihitung dari Outbound
+   (unit yang sudah terpasang / Replacement), dengan status approval BAK/BAS. */
+function getStockSummarySite(){
+  const sc = schema();
+  const d  = cdata();
+  const groupField = sc.stockGroupField || 'cluster';
+  const qtyKey = sc.map.qty || 'qty';
+  const map = new Map();
+
+  const getEntry = name => {
+    if(!map.has(name)) map.set(name, { group:name, total:0, bakDone:0, bakPending:0, basDone:0, basPending:0, rows:[] });
+    return map.get(name);
+  };
+
+  const isBakDone = v => String(v||'').trim().toUpperCase() === 'CLOSE';
+  const isBasDone = v => String(v||'').trim().toUpperCase() === 'CLOSE';
+
+  d.outboundRaw.forEach(row => {
+    const groupVal = String(row[groupField] || '').trim() || '(Tanpa Cluster)';
+    const qty = parseQty(row[qtyKey]) || 1;
+    const entry = getEntry(groupVal);
+    entry.total += qty;
+    if(isBakDone(row['bak status'])) entry.bakDone += qty; else entry.bakPending += qty;
+    if(isBasDone(row['bas status'])) entry.basDone += qty; else entry.basPending += qty;
+    entry.rows.push(row);
+  });
+
+  return Array.from(map.values());
+}
+
 function getOnSearchMaterials(){
   const sc = schema();
   const d  = cdata();
@@ -703,12 +767,26 @@ function getOnSearchMaterials(){
 }
 
 function renderStockSummary(){
-  let summary = getStockSummary();
+  const sc = schema();
+  if(sc.stockMode === 'site') return renderStockSummarySite();
+  return renderStockSummaryTechnician();
+}
+
+function renderStockDetail(){
+  const sc = schema();
+  if(sc.stockMode === 'site') return renderStockDetailSite();
+  return renderStockDetailTechnician();
+}
+
+function renderStockSummaryTechnician(){
+  let summary = getStockSummaryTechnician();
   if(stockState.search){
     const t = stockState.search.toLowerCase();
     summary = summary.filter(s => s.pic.toLowerCase().includes(t));
   }
   summary.sort((a,b) => a.pic.localeCompare(b.pic,'id'));
+
+  setStockTableHead(['PIC','Ready','Faulty','Pending','Total'], [false,true,true,true,true]);
 
   const body = document.getElementById('stockSummaryBody');
   const d = cdata();
@@ -719,7 +797,7 @@ function renderStockSummary(){
     body.innerHTML = `<tr><td colspan="5" class="empty-row">Tidak ada teknisi yang cocok.</td></tr>`; return;
   }
   body.innerHTML = summary.map(s => `
-    <tr data-pic="${escapeHtml(s.pic)}" class="${stockState.expandedPIC===s.pic?'active-row':''}">
+    <tr data-key="${escapeHtml(s.pic)}" class="${stockState.expandedPIC===s.pic?'active-row':''}">
       <td>${escapeHtml(s.pic)}</td>
       <td class="num">${formatNumber(s.ready)}</td>
       <td class="num">${formatNumber(s.faulty)}</td>
@@ -728,13 +806,13 @@ function renderStockSummary(){
     </tr>`).join('');
   body.querySelectorAll('tr').forEach(tr =>
     tr.addEventListener('click', () => {
-      stockState.expandedPIC = stockState.expandedPIC===tr.dataset.pic ? null : tr.dataset.pic;
+      stockState.expandedPIC = stockState.expandedPIC===tr.dataset.key ? null : tr.dataset.key;
       renderStockSummary(); renderStockDetail();
     })
   );
 }
 
-function renderStockDetail(){
+function renderStockDetailTechnician(){
   const panel = document.getElementById('stockDetailPanel');
   if(!stockState.expandedPIC){ panel.style.display='none'; return; }
   panel.style.display='block';
@@ -757,6 +835,9 @@ function renderStockDetail(){
     : `<tr><td colspan="2" class="empty-row">Tidak ada material.</td></tr>`;
 
   /* Detail rows */
+  setStockDetailTableHead([
+    {label:'Material Name'}, {label:'Item Code'}, {label:'Serial Number'}, {label:'Qty', num:true}, {label:'Status'}
+  ]);
   const nameKey   = sc.map.materialName || 'material name';
   const codeKey   = sc.map.itemCode || 'item code';
   const serialKey = sc.map.serialNumber || 'serial number';
@@ -769,6 +850,103 @@ function renderStockDetail(){
     <td class="num">${formatNumber(parseQty(r[qtyKey]))}</td>
     <td><span class="${statusBadgeClass(sc,r[statusKey])}">${escapeHtml(r[statusKey])}</span></td>
   </tr>`).join('');
+}
+
+/* ---- Stock per Site/Cluster (PIM) ---- */
+function renderStockSummarySite(){
+  const sc = schema();
+  let summary = getStockSummarySite();
+  if(stockState.search){
+    const t = stockState.search.toLowerCase();
+    summary = summary.filter(s => s.group.toLowerCase().includes(t));
+  }
+  summary.sort((a,b) => a.group.localeCompare(b.group,'id'));
+
+  setStockTableHead(
+    [sc.stockGroupLabel || 'Cluster', 'Total Terpasang', 'BAK Selesai', 'BAK Pending', 'BAS Selesai', 'BAS Pending'],
+    [false, true, true, true, true, true]
+  );
+
+  const body = document.getElementById('stockSummaryBody');
+  const d = cdata();
+  if(d.outboundRaw.length === 0){
+    body.innerHTML = `<tr><td colspan="6" class="empty-row">Belum ada data.</td></tr>`; return;
+  }
+  if(summary.length === 0){
+    body.innerHTML = `<tr><td colspan="6" class="empty-row">Tidak ada cluster yang cocok.</td></tr>`; return;
+  }
+  body.innerHTML = summary.map(s => `
+    <tr data-key="${escapeHtml(s.group)}" class="${stockState.expandedPIC===s.group?'active-row':''}">
+      <td>${escapeHtml(s.group)}</td>
+      <td class="num">${formatNumber(s.total)}</td>
+      <td class="num">${formatNumber(s.bakDone)}</td>
+      <td class="num">${formatNumber(s.bakPending)}</td>
+      <td class="num">${formatNumber(s.basDone)}</td>
+      <td class="num">${formatNumber(s.basPending)}</td>
+    </tr>`).join('');
+  body.querySelectorAll('tr').forEach(tr =>
+    tr.addEventListener('click', () => {
+      stockState.expandedPIC = stockState.expandedPIC===tr.dataset.key ? null : tr.dataset.key;
+      renderStockSummary(); renderStockDetail();
+    })
+  );
+}
+
+function renderStockDetailSite(){
+  const panel = document.getElementById('stockDetailPanel');
+  if(!stockState.expandedPIC){ panel.style.display='none'; return; }
+  panel.style.display='block';
+  document.getElementById('stockDetailName').textContent = stockState.expandedPIC;
+
+  const sc = schema();
+  const groupField = sc.stockGroupField || 'cluster';
+  const summary = getStockSummarySite();
+  const entry = summary.find(s => s.group === stockState.expandedPIC);
+  const rows = entry ? entry.rows : [];
+
+  /* Material breakdown */
+  const matMap = new Map();
+  rows.forEach(r => {
+    const name = String(r[sc.map.materialName||'material'] || '').trim() || '(Tanpa Nama)';
+    matMap.set(name, (matMap.get(name)||0) + (parseQty(r[sc.map.qty||'qty shipment']) || 1));
+  });
+  const matList = Array.from(matMap.entries()).sort((a,b)=>b[1]-a[1]);
+  const mbody = document.getElementById('stockMaterialBreakdownBody');
+  mbody.innerHTML = matList.length
+    ? matList.map(([name,qty]) => `<tr><td>${escapeHtml(name)}</td><td class="num">${formatNumber(qty)}</td></tr>`).join('')
+    : `<tr><td colspan="2" class="empty-row">Tidak ada material.</td></tr>`;
+
+  /* Detail rows — pakai stockDetailColumns dari schema kalau ada */
+  const cols = sc.stockDetailColumns || [
+    {key:sc.map.materialName||'material', label:'Material'},
+    {key:sc.map.itemCode||'item code', label:'Item Code', mono:true},
+    {key:sc.map.serialNumber||'s/n after', label:'Serial Number', mono:true},
+    {key:sc.map.qty||'qty shipment', label:'Qty', num:true},
+  ];
+  setStockDetailTableHead(cols);
+  document.getElementById('stockDetailBody').innerHTML = rows.map(r => `<tr>${
+    cols.map(c => {
+      const raw = r[c.key];
+      if(c.badge) return `<td><span class="${statusBadgeClass(sc, raw)}">${escapeHtml(raw)}</span></td>`;
+      if(c.date)  return `<td>${escapeHtml(formatDateVal(raw))}</td>`;
+      if(c.num)   return `<td class="num">${formatNumber(parseQty(raw))}</td>`;
+      if(c.mono)  return `<td class="mono">${escapeHtml(raw)}</td>`;
+      return `<td>${escapeHtml(raw)}</td>`;
+    }).join('')
+  }</tr>`).join('');
+}
+
+/* ---- Helper: render thead dinamis utk tabel Stock Summary & Stock Detail ---- */
+function setStockTableHead(labels, numFlags){
+  const thead = document.querySelector('#stockSummaryTable thead tr');
+  if(!thead) return;
+  thead.innerHTML = labels.map((l,i) => `<th${numFlags[i] ? ' class="num"' : ''}>${escapeHtml(l)}</th>`).join('');
+}
+
+function setStockDetailTableHead(cols){
+  const thead = document.querySelector('#stockDetailTable thead tr');
+  if(!thead) return;
+  thead.innerHTML = cols.map(c => `<th${c.num ? ' class="num"' : ''}>${escapeHtml(c.label)}</th>`).join('');
 }
 
 /* ===================== DASHBOARD ===================== */
@@ -802,15 +980,21 @@ function renderDashboard(){
   let stockFaulty = 0;
   outbound.forEach(r => { if(sc.isUnreturned(r)) stockFaulty += parseQty(r[qtyKey]); });
 
-  const techSet = new Set();
-  outbound.forEach(r => { const p = String(r[picKey]||'').trim(); if(sc.isTechnicianPIC(p)) techSet.add(p); });
+  let teknisiCount;
+  if(sc.computeKpiTeknisi){
+    teknisiCount = sc.computeKpiTeknisi(outbound);
+  } else {
+    const techSet = new Set();
+    outbound.forEach(r => { const p = String(r[picKey]||'').trim(); if(sc.isTechnicianPIC(p)) techSet.add(p); });
+    teknisiCount = techSet.size;
+  }
 
   document.getElementById('kpiTotalMaterial').textContent = formatNumber(matSet.size);
   document.getElementById('kpiQtyInbound').textContent    = formatNumber(totalQtyIn);
   document.getElementById('kpiQtyOutbound').textContent   = formatNumber(totalQtyOut);
   document.getElementById('kpiStockReady').textContent    = formatNumber(stockReady);
   document.getElementById('kpiStockFaulty').textContent   = formatNumber(stockFaulty);
-  document.getElementById('kpiTeknisi').textContent       = formatNumber(techSet.size);
+  document.getElementById('kpiTeknisi').textContent       = formatNumber(teknisiCount);
 
   renderCharts(inbound, outbound, stockReady, stockFaulty);
   renderReadyMatCard(inbound);
@@ -1058,6 +1242,14 @@ function updateCustomerUI(){
   /* KPI label for "Belum Return" might vary per customer */
   const faultyLabel = document.getElementById('kpiFaultyLabel');
   if(faultyLabel) faultyLabel.textContent = 'Belum Return ke WH';
+
+  /* KPI label "Total Teknisi" bisa berubah jadi "Total Cluster" (mis. PIM) */
+  const teknisiLabel = document.getElementById('kpiTeknisiLabel');
+  if(teknisiLabel) teknisiLabel.textContent = sc.kpiTeknisiLabel || 'Total Teknisi';
+
+  /* Placeholder search di halaman Stock (per teknisi vs per cluster) */
+  const stockSearchEl = document.getElementById('stockSearch');
+  if(stockSearchEl) stockSearchEl.placeholder = sc.stockSearchPlaceholder || 'Cari nama PIC / teknisi...';
 }
 
 /* ===================== EXPORT ===================== */
@@ -1096,7 +1288,8 @@ function showPage(page){
   const navEl = document.querySelector(`.nav-item[data-page="${page}"]`);
   if(navEl) navEl.classList.add('active');
 
-  const titles = { dashboard:'Dashboard', inbound:'Data Inbound', outbound:'Data Outbound', stock:'Stock On Hand Teknisi' };
+  const sc = schema();
+  const titles = { dashboard:'Dashboard', inbound:'Data Inbound', outbound:'Data Outbound', stock: sc.stockPageTitle || 'Stock On Hand Teknisi' };
   document.getElementById('pageTitle').textContent = titles[page] || page;
 
   /* Lazy render on page switch */

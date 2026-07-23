@@ -291,8 +291,150 @@ const CUSTOMERS = {
     searchKeysOutbound: ['nama barang','kode barang','no sn','ex site','pic eos'],
   },
 
+  /* ------------------------------------------------------------------ */
+  /* PIM — format BEDA dari customer lain: cuma 1 sheet gabungan
+     ("Detail Terex"), tidak ada sheet Inbound/Outbound terpisah, dan
+     tidak ada kolom PIC/teknisi (per-unit tracking berbasis Cluster/Site).
+     Inbound  = baris dengan Status Material = AVAILABLE (stock di gudang)
+     Outbound = baris dengan Status Material = Replacement (unit terpasang)
+  ============================================================ */
+  PIM: {
+    id: 'PIM',
+    name: 'PIM',
+    color: '#8E44AD',
+    /* Isi dengan link publish-to-web CSV dari sheet "Detail Terex".
+       Karena inbound & outbound berasal dari sheet YANG SAMA, isi
+       kedua URL ini dengan link yang SAMA persis. */
+    sheets: {
+      inbound:  '',
+      outbound: '',
+    },
+    sheetInbound:  'Detail Terex',
+    sheetOutbound: 'Detail Terex',
+    /* single-sheet: setelah di-parse, baris dipisah otomatis berdasarkan
+       Status Material menggunakan filterInboundRows / filterOutboundRows */
+    singleSheet: true,
+    map: {
+      noRow:            'no',
+      updateDate:       'date update',
+      vendor:            'vendor',
+      siteId:            'site id',
+      lokasi:            'site name',     // dipakai juga sbg "lokasi" umum
+      mrNumber:          'mr number',
+      cluster:           'cluster',
+      region:            'cluster',        // dipakai utk filter region di Inbound
+      qty:               'qty shipment',
+      itemCode:          'item code',
+      materialName:      'material',
+      brand:             'brand',
+      type:              'type',
+      serialNumber:      's/n after',
+      serialNumberBefore:'s/n before',
+      clusterActual:     'cluster actual',
+      numberTT:          'tt number',
+      noBKB:             'bak number',
+      basNumber:         'bas number',
+      qtyReplace:        'qty replace',
+      justifikasi:       'justifikasi',
+      typeBefore:        'type before',
+      dateBAK:           'date bak',
+      bakStatus:         'bak status',
+      basStatus:         'bas status',
+      tanggalInstall:    'date instalasi',
+      tanggalReturn:     'date return',
+      noBA:              'ba return number',
+      noReturn:          'ba return number',   // konsisten dgn pola customer lain (kosong = belum return)
+      status:            'status material',    // dipakai di Inbound (selalu AVAILABLE stlh filter)
+      statusOut:         'status material',    // dipakai di Outbound (selalu Replacement stlh filter)
+      statusReturnFaulty:'status returnfaulty',
+      sohGudang:         'soh',
+      sohTotal:          'soh_2',              // kolom SOH kedua (nama kolom sama di Excel, di-dedup jadi 'soh_2')
+      issueSN:           'issue sn existing',
+      pic:               'cluster',            // tidak ada PIC asli; dipakai hanya utk tampilan kartu Faulty Material di dashboard
+    },
+    statusReady(s){
+      return String(s||'').toLowerCase().trim() === 'available';
+    },
+    statusFaulty(s){
+      return String(s||'').toLowerCase().trim() === 'return spare faulty';
+    },
+    isUnreturned(row){
+      /* Outbound (Replacement): belum return kalau BA Return Number kosong */
+      return !String(row['ba return number']||'').trim();
+    },
+    NON_TECH_PIC: new Set(),
+    isTechnicianPIC(){ return false; },  // PIM tidak punya konsep PIC/teknisi
+    inboundTechLocField: null,
+
+    /* ---- Khusus single-sheet: pisahkan hasil parse jadi Inbound/Outbound ---- */
+    filterInboundRows(rows){
+      return rows.filter(r => String(r['status material']||'').trim().toLowerCase() === 'available');
+    },
+    filterOutboundRows(rows){
+      return rows.filter(r => String(r['status material']||'').trim().toLowerCase() === 'replacement');
+    },
+
+    /* ---- Halaman Stock: per Cluster (bukan per teknisi) ---- */
+    stockMode: 'site',
+    stockGroupField: 'cluster',
+    stockGroupLabel: 'Cluster',
+    stockPageTitle: 'Stock per Cluster',
+    stockSearchPlaceholder: 'Cari nama cluster...',
+    kpiTeknisiLabel: 'Total Cluster',
+    computeKpiTeknisi(outboundRows){
+      const set = new Set(outboundRows.map(r => String(r['cluster']||'').trim()).filter(Boolean));
+      return set.size;
+    },
+
+    inboundColumns: [
+      { key:'material',       label:'Material'                },
+      { key:'item code',      label:'Item Code',   mono:true   },
+      { key:'brand',          label:'Brand'                    },
+      { key:'type',           label:'Type'                     },
+      { key:'qty shipment',   label:'Qty',         num:true    },
+      { key:'s/n after',      label:'Serial Number',mono:true  },
+      { key:'cluster',        label:'Cluster'                  },
+      { key:'vendor',         label:'Vendor'                   },
+      { key:'mr number',      label:'MR Number',   mono:true   },
+      { key:'status material',label:'Status',      badge:true  },
+      { key:'date update',    label:'Update Date', date:true   },
+    ],
+    outboundColumns: [
+      { key:'material',        label:'Material'                },
+      { key:'item code',       label:'Item Code',   mono:true   },
+      { key:'qty shipment',    label:'Qty',         num:true    },
+      { key:'s/n after',       label:'S/N After',   mono:true   },
+      { key:'s/n before',      label:'S/N Before',  mono:true   },
+      { key:'site name',       label:'Site Name'                },
+      { key:'cluster',         label:'Cluster'                  },
+      { key:'tt number',       label:'TT Number',   mono:true   },
+      { key:'date instalasi',  label:'Tgl Instalasi',date:true  },
+      { key:'bak status',      label:'BAK Status'               },
+      { key:'bas status',      label:'BAS Status'               },
+      { key:'ba return number',label:'No BA Return',mono:true   },
+      { key:'date return',     label:'Tgl Return',  date:true   },
+      { key:'justifikasi',     label:'Justifikasi'              },
+    ],
+    /* Detail unit per cluster di halaman Stock */
+    stockDetailColumns: [
+      { key:'material',        label:'Material'               },
+      { key:'item code',       label:'Item Code',  mono:true   },
+      { key:'s/n after',       label:'S/N After',  mono:true   },
+      { key:'site name',       label:'Site Name'               },
+      { key:'tt number',       label:'TT Number',  mono:true   },
+      { key:'bak status',      label:'BAK Status'              },
+      { key:'bas status',      label:'BAS Status'              },
+      { key:'date instalasi',  label:'Tgl Instalasi', date:true},
+      { key:'ba return number',label:'No BA Return',mono:true  },
+    ],
+    inboundFilterRegionField: 'cluster',
+    outboundReturnField: 'ba return number',
+    outboundReturnType: 'empty',
+    searchKeysInbound:  ['material','item code','s/n after','cluster','vendor','mr number'],
+    searchKeysOutbound: ['material','item code','s/n after','s/n before','site name','cluster','tt number'],
+  },
+
 };
 
 /* Daftar customer yang aktif (urutan tampil di dropdown) */
-const CUSTOMER_LIST = ['IPT', 'MSG', 'RGR'];
-/* Tambahkan 'PIM' di sini setelah format Excel-nya diketahui */
+const CUSTOMER_LIST = ['IPT', 'MSG', 'RGR', 'PIM'];
